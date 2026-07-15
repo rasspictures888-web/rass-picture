@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RAS Pictures - Dashboard</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             --primary-color: #1a1a1a;
@@ -47,6 +48,53 @@
             font-size: 24px;
             letter-spacing: 1px;
             color: var(--accent-color);
+        }
+
+        .auth-bar {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .auth-bar p {
+            margin: 0 0 10px 0;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .btn-google {
+            background: #4285F4;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .btn-google:hover { background: #3367d6; }
+
+        .btn-signout {
+            background: #eee;
+            color: #333;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+
+        .signed-in-badge {
+            display: inline-flex;
+            align-items: center;
+            font-size: 13px;
+            color: var(--success-color);
+            font-weight: bold;
         }
 
         .dashboard-grid {
@@ -132,14 +180,8 @@
             transition: background 0.3s;
         }
 
-        .btn-submit:hover {
-            background: #333;
-        }
-
-        .btn-submit:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
+        .btn-submit:hover { background: #333; }
+        .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
         .history-section {
             background: var(--card-bg);
@@ -186,46 +228,31 @@
             font-size: 14px;
         }
 
-        .transaction-item:last-child {
-            border-bottom: none;
-        }
+        .transaction-item:last-child { border-bottom: none; }
 
-        .txn-details {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .txn-date {
-            font-size: 11px;
-            color: #888;
-        }
-
-        .txn-people {
-            font-size: 12px;
-            color: #555;
-            margin-top: 2px;
-        }
-
-        .txn-amount {
-            font-weight: bold;
-        }
+        .txn-details { display: flex; flex-direction: column; }
+        .txn-date { font-size: 11px; color: #888; }
+        .txn-people { font-size: 12px; color: #555; margin-top: 2px; }
+        .txn-amount { font-weight: bold; }
 
         .income-cash { color: var(--success-color); }
         .income-trans { color: #0077b6; }
         .expense { color: var(--danger-color); }
 
-        .empty-state {
+        .empty-state, .loading-state {
             text-align: center;
             color: #999;
             padding: 20px;
             font-size: 14px;
         }
 
-        .loading-state {
+        #app-content { display: none; }
+
+        #sync-status {
             text-align: center;
+            font-size: 11px;
             color: #999;
-            padding: 20px;
-            font-size: 14px;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -237,101 +264,260 @@
         <p style="margin: 0; font-size: 12px; color: #aaa;">የዕለት የሂሳብ መቆጣጠሪያ</p>
     </header>
 
-    <div class="dashboard-grid">
-        <div class="card">
-            <h3>የካሽ ገቢ (Cash)</h3>
-            <div id="total-cash" class="value">0.00 ብር</div>
+    <div class="auth-bar">
+        <div id="signed-out-view">
+            <p>ውሂብዎን በGoogle Drive ላይ ለማስቀመጥ እና በሁሉም መሳሪያዎችዎ ላይ ለማግኘት ይግቡ</p>
+            <button class="btn-google" id="signin-btn">Google Sign-In</button>
         </div>
-        <div class="card">
-            <h3>የትራንዛክሽን ገቢ</h3>
-            <div id="total-trans" class="value">0.00 ብር</div>
-        </div>
-        <div class="card">
-            <h3>አጠቃላይ ወጪ</h3>
-            <div id="total-expense" class="value">0.00 ብር</div>
-        </div>
-        <div class="card">
-            <h3>የተነሱ ሰዎች</h3>
-            <div id="total-people" class="value">0 ሰው</div>
-        </div>
-        <div class="card full-width">
-            <h3>ጠቅላላ ቀሪ ሂሳብ (Net Balance)</h3>
-            <div id="net-balance" class="value" style="color: var(--accent-color); font-size: 24px;">0.00 ብር</div>
+        <div id="signed-in-view" style="display:none;">
+            <span class="signed-in-badge">✓ ተገናኝቷል: <span id="user-email"></span></span>
+            <button class="btn-signout" id="signout-btn">ውጣ</button>
         </div>
     </div>
 
-    <div class="form-section">
-        <h2>አዲስ መረጃ መመዝገቢያ</h2>
-        <form id="accounting-form">
-            <div class="input-group">
-                <label for="type">የመረጃው አይነት</label>
-                <select id="type" required>
-                    <option value="cash">ገቢ - በካሽ (Cash)</option>
-                    <option value="transaction">ገቢ - በትራንዛክሽን (CBE Birr / Telebirr)</option>
-                    <option value="expense">ወጪ (Expense)</option>
-                </select>
+    <div id="app-content">
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>የካሽ ገቢ (Cash)</h3>
+                <div id="total-cash" class="value">0.00 ብር</div>
             </div>
-
-            <div class="input-group">
-                <label for="amount">የገንዘብ መጠን (በብር)</label>
-                <input type="number" id="amount" placeholder="ምሳሌ፡ 200" required min="0" step="0.01">
+            <div class="card">
+                <h3>የትራንዛክሽን ገቢ</h3>
+                <div id="total-trans" class="value">0.00 ብር</div>
             </div>
-
-            <div class="input-group" id="people-group">
-                <label for="people">የተነሱ ሰዎች ቁጥር (ለገቢ ብቻ)</label>
-                <input type="number" id="people" placeholder="ምሳሌ፡ 2" value="0" min="0">
+            <div class="card">
+                <h3>አጠቃላይ ወጪ</h3>
+                <div id="total-expense" class="value">0.00 ብር</div>
             </div>
-
-            <div class="input-group">
-                <label for="description">ማብራሪያ / ስም</label>
-                <input type="text" id="description" placeholder="ምሳሌ፡ የፎቶ ቀረጻ ወይም የቤት ኪራይ" required>
+            <div class="card">
+                <h3>የተነሱ ሰዎች</h3>
+                <div id="total-people" class="value">0 ሰው</div>
             </div>
+            <div class="card full-width">
+                <h3>ጠቅላላ ቀሪ ሂሳብ (Net Balance)</h3>
+                <div id="net-balance" class="value" style="color: var(--accent-color); font-size: 24px;">0.00 ብር</div>
+            </div>
+        </div>
 
-            <button type="submit" class="btn-submit" id="submit-btn">መዝግብ</button>
-        </form>
-    </div>
+        <div class="form-section">
+            <h2>አዲስ መረጃ መመዝገቢያ</h2>
+            <form id="accounting-form">
+                <div class="input-group">
+                    <label for="type">የመረጃው አይነት</label>
+                    <select id="type" required>
+                        <option value="cash">ገቢ - በካሽ (Cash)</option>
+                        <option value="transaction">ገቢ - በትራንዛክሽን (CBE Birr / Telebirr)</option>
+                        <option value="expense">ወጪ (Expense)</option>
+                    </select>
+                </div>
 
-    <div class="history-section">
-        <h2>
-            የግብይት ታሪክ (Transactions)
-            <button class="clear-btn" onclick="clearData()">ሁሉንም አጥፋ</button>
-        </h2>
-        <ul id="transaction-list" class="transaction-list">
-            <li class="loading-state">ከGoogle Drive በመጫን ላይ...</li>
-        </ul>
-        <p id="sync-status" style="text-align:center; font-size:11px; color:#999; margin-top:10px;"></p>
+                <div class="input-group">
+                    <label for="amount">የገንዘብ መጠን (በብር)</label>
+                    <input type="number" id="amount" placeholder="ምሳሌ፡ 200" required min="0" step="0.01">
+                </div>
+
+                <div class="input-group" id="people-group">
+                    <label for="people">የተነሱ ሰዎች ቁጥር (ለገቢ ብቻ)</label>
+                    <input type="number" id="people" placeholder="ምሳሌ፡ 2" value="0" min="0">
+                </div>
+
+                <div class="input-group">
+                    <label for="description">ማብራሪያ / ስም</label>
+                    <input type="text" id="description" placeholder="ምሳሌ፡ የፎቶ ቀረጻ ወይም የቤት ኪራይ" required>
+                </div>
+
+                <button type="submit" class="btn-submit" id="submit-btn">መዝግብ</button>
+            </form>
+        </div>
+
+        <div class="history-section">
+            <h2>
+                የግብይት ታሪክ (Transactions)
+                <button class="clear-btn" onclick="clearData()">ሁሉንም አጥፋ</button>
+            </h2>
+            <ul id="transaction-list" class="transaction-list">
+                <li class="loading-state">በመጫን ላይ...</li>
+            </ul>
+            <p id="sync-status"></p>
+        </div>
     </div>
 </div>
 
 <script>
+    // ==== CONFIG ====
+    const GOOGLE_CLIENT_ID = '123219683130-0tt5p7eku9uj8cggti7tm9ebe4276rip.apps.googleusercontent.com';
     const DRIVE_FILENAME = 'ras_pictures_transactions.json';
-    const DRIVE_FILE_ID = '1u3kPojR35t_hlNNsjRTdgKs4K4fo0wYB';
-    let transactions = [];
+    const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
-    async function callClaudeWithDrive(prompt) {
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                model: "claude-sonnet-4-6",
-                max_tokens: 1000,
-                messages: [{ role: "user", content: prompt }],
-                mcp_servers: [
-                    {
-                        type: "url",
-                        url: "https://drivemcp.googleapis.com/mcp/v1",
-                        name: "google-drive"
-                    }
-                ]
-            })
+    let transactions = [];
+    let accessToken = null;
+    let driveFileId = null;
+    let tokenClient = null;
+
+    // ==== AUTH ====
+    window.addEventListener('load', () => {
+        tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_CLIENT_ID,
+            scope: DRIVE_SCOPE,
+            callback: async (response) => {
+                if (response.error) {
+                    console.error('Auth error:', response);
+                    setSyncStatus('⚠ መግባት አልተቻለም');
+                    return;
+                }
+                accessToken = response.access_token;
+                await onSignedIn();
+            }
         });
-        const data = await response.json();
-        const textBlocks = (data.content || [])
-            .filter(item => item.type === "text")
-            .map(item => item.text);
-        return textBlocks.join("\n").trim();
+
+        document.getElementById('signin-btn').addEventListener('click', () => {
+            tokenClient.requestAccessToken();
+        });
+
+        document.getElementById('signout-btn').addEventListener('click', signOut);
+    });
+
+    async function onSignedIn() {
+        document.getElementById('signed-out-view').style.display = 'none';
+        document.getElementById('signed-in-view').style.display = 'block';
+        document.getElementById('app-content').style.display = 'block';
+
+        try {
+            const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: { Authorization: 'Bearer ' + accessToken }
+            });
+            const userInfo = await userInfoRes.json();
+            document.getElementById('user-email').innerText = userInfo.email || '';
+        } catch (e) {
+            console.error('Could not fetch user info', e);
+        }
+
+        await loadData();
     }
 
+    function signOut() {
+        if (accessToken) {
+            google.accounts.oauth2.revoke(accessToken, () => {});
+        }
+        accessToken = null;
+        driveFileId = null;
+        transactions = [];
+        document.getElementById('signed-out-view').style.display = 'block';
+        document.getElementById('signed-in-view').style.display = 'none';
+        document.getElementById('app-content').style.display = 'none';
+    }
+
+    // ==== DRIVE FILE HELPERS ====
+    async function findDriveFile() {
+        const q = encodeURIComponent(`name='${DRIVE_FILENAME}' and trashed=false`);
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,modifiedTime)`, {
+            headers: { Authorization: 'Bearer ' + accessToken }
+        });
+        if (!res.ok) throw new Error('Drive search failed: ' + res.status);
+        const data = await res.json();
+        if (data.files && data.files.length > 0) {
+            data.files.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+            return data.files[0].id;
+        }
+        return null;
+    }
+
+    async function createDriveFile(content) {
+        const metadata = { name: DRIVE_FILENAME, mimeType: 'application/json' };
+        const boundary = '-------314159265358979323846';
+        const delimiter = "\r\n--" + boundary + "\r\n";
+        const closeDelim = "\r\n--" + boundary + "--";
+
+        const body =
+            delimiter +
+            'Content-Type: application/json\r\n\r\n' +
+            JSON.stringify(metadata) +
+            delimiter +
+            'Content-Type: application/json\r\n\r\n' +
+            content +
+            closeDelim;
+
+        const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+            method: 'POST',
+            headers: {
+                Authorization: 'Bearer ' + accessToken,
+                'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+            },
+            body: body
+        });
+        if (!res.ok) throw new Error('Drive create failed: ' + res.status);
+        const data = await res.json();
+        return data.id;
+    }
+
+    async function updateDriveFile(fileId, content) {
+        const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+            method: 'PATCH',
+            headers: {
+                Authorization: 'Bearer ' + accessToken,
+                'Content-Type': 'application/json'
+            },
+            body: content
+        });
+        if (!res.ok) throw new Error('Drive update failed: ' + res.status);
+    }
+
+    async function downloadDriveFile(fileId) {
+        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+            headers: { Authorization: 'Bearer ' + accessToken }
+        });
+        if (!res.ok) throw new Error('Drive download failed: ' + res.status);
+        return await res.text();
+    }
+
+    // ==== DATA LOAD / SAVE ====
+    async function loadData() {
+        setSyncStatus('ከGoogle Drive በመጫን ላይ...');
+        try {
+            driveFileId = await findDriveFile();
+            if (driveFileId) {
+                const content = await downloadDriveFile(driveFileId);
+                transactions = content ? JSON.parse(content) : [];
+            } else {
+                transactions = [];
+                driveFileId = await createDriveFile('[]');
+            }
+            setSyncStatus('✓ ከGoogle Drive ጋር ተመሳስሏል');
+        } catch (error) {
+            console.error('Load error:', error);
+            transactions = [];
+            setSyncStatus('⚠ ከGoogle Drive መጫን አልተቻለም');
+        }
+        render();
+    }
+
+    async function saveAndRender() {
+        submitBtn.disabled = true;
+        submitBtn.innerText = 'ወደ Google Drive በመላክ ላይ...';
+        setSyncStatus('በማስቀመጥ ላይ...');
+        try {
+            const content = JSON.stringify(transactions);
+            if (!driveFileId) {
+                driveFileId = await createDriveFile(content);
+            } else {
+                await updateDriveFile(driveFileId, content);
+            }
+            setSyncStatus('✓ ወደ Google Drive ተቀምጧል');
+        } catch (error) {
+            console.error('Save error:', error);
+            setSyncStatus('⚠ ማስቀመጥ አልተቻለም');
+        }
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'መዝግብ';
+        render();
+    }
+
+    function setSyncStatus(msg) {
+        const el = document.getElementById('sync-status');
+        if (el) el.innerText = msg;
+    }
+
+    // ==== FORM / RENDER ====
     const form = document.getElementById('accounting-form');
     const typeInput = document.getElementById('type');
     const amountInput = document.getElementById('amount');
@@ -351,6 +537,7 @@
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (!accessToken) return;
 
         const transaction = {
             id: Date.now(),
@@ -367,58 +554,11 @@
         peopleGroup.style.display = 'block';
     });
 
-    function setSyncStatus(msg) {
-        const el = document.getElementById('sync-status');
-        if (el) el.innerText = msg;
-    }
-
-    async function saveAndRender() {
-        submitBtn.disabled = true;
-        submitBtn.innerText = 'ወደ Google Drive በመላክ ላይ...';
-        setSyncStatus('በማስቀመጥ ላይ...');
-        try {
-            const content = JSON.stringify(transactions);
-            const prompt = `Use Google Drive tools to update the file with ID "${DRIVE_FILE_ID}" (named "${DRIVE_FILENAME}") so its content becomes exactly this JSON (there is no update tool, so create_file with the same title will be treated as the new version — just make sure only ONE current version has this new content):\n\n${content}\n\nAfter doing this, reply with only the word DONE.`;
-            const result = await callClaudeWithDrive(prompt);
-            if (result.includes('DONE')) {
-                setSyncStatus('✓ ወደ Google Drive ተቀምጧል');
-            } else {
-                setSyncStatus('⚠ ማስቀመጥ ላይ ችግር ተፈጥሯል');
-            }
-        } catch (error) {
-            console.error('Drive save error:', error);
-            setSyncStatus('⚠ ከGoogle Drive ጋር መገናኘት አልተቻለም');
-        }
-        submitBtn.disabled = false;
-        submitBtn.innerText = 'መዝግብ';
-        render();
-    }
-
-    async function loadData() {
-        setSyncStatus('ከGoogle Drive በመጫን ላይ...');
-        try {
-            const prompt = `Use Google Drive tools to download the content of the file with ID "${DRIVE_FILE_ID}". Reply with ONLY the raw JSON array it contains — no explanation, no markdown code fences, no extra text. If the file is empty or unreadable, reply with exactly: []`;
-            const result = await callClaudeWithDrive(prompt);
-            const cleaned = result.replace(/```json|```/g, '').trim();
-            const parsed = JSON.parse(cleaned);
-            transactions = Array.isArray(parsed) ? parsed : [];
-            setSyncStatus('✓ ከGoogle Drive ጋር ተመሳስሏል');
-        } catch (error) {
-            console.error('Drive load error:', error);
-            transactions = [];
-            setSyncStatus('⚠ ከGoogle Drive መጫን አልተቻለም — ባዶ ዝርዝር ታይቷል');
-        }
-        render();
-    }
-
     function render() {
         const list = document.getElementById('transaction-list');
         list.innerHTML = '';
 
-        let totalCash = 0;
-        let totalTrans = 0;
-        let totalExpense = 0;
-        let totalPeople = 0;
+        let totalCash = 0, totalTrans = 0, totalExpense = 0, totalPeople = 0;
 
         if (transactions.length === 0) {
             list.innerHTML = '<li class="empty-state">እስካሁን የተመዘገበ ግብይት የለም</li>';
@@ -438,21 +578,10 @@
             const li = document.createElement('li');
             li.className = 'transaction-item';
 
-            let typeClass = '';
-            let typeLabel = '';
-            let amountSign = '+';
-
-            if (txn.type === 'cash') {
-                typeClass = 'income-cash';
-                typeLabel = 'ካሽ';
-            } else if (txn.type === 'transaction') {
-                typeClass = 'income-trans';
-                typeLabel = 'ትራንዛክሽን';
-            } else {
-                typeClass = 'expense';
-                typeLabel = 'ወጪ';
-                amountSign = '-';
-            }
+            let typeClass = '', typeLabel = '', amountSign = '+';
+            if (txn.type === 'cash') { typeClass = 'income-cash'; typeLabel = 'ካሽ'; }
+            else if (txn.type === 'transaction') { typeClass = 'income-trans'; typeLabel = 'ትራንዛክሽን'; }
+            else { typeClass = 'expense'; typeLabel = 'ወጪ'; amountSign = '-'; }
 
             li.innerHTML = `
                 <div class="txn-details">
@@ -483,13 +612,11 @@
     }
 
     async function clearData() {
-        if (confirm('እርግጠኛ ነህ ሁሉንም የተመዘገቡ መረጃዎች ማጥፋት ትፈልጋለህ? (አዲስ ባዶ ፋይል በGoogle Drive ላይ ይፈጠራል)')) {
+        if (confirm('እርግጠኛ ነህ ሁሉንም የተመዘገቡ መረጃዎች ማጥፋት ትፈልጋለህ?')) {
             transactions = [];
             await saveAndRender();
         }
     }
-
-    loadData();
 </script>
 
 </body>
