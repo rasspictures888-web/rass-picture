@@ -459,7 +459,7 @@
                 'X-Master-Key': JSONBIN_API_KEY,
                 'X-Bin-Name': 'ras_pictures_transactions'
             },
-            body: JSON.stringify([])
+            body: JSON.stringify({ initialized: true, transactions: [] })
         });
         if (!res.ok) {
             const errText = await res.text().catch(() => '');
@@ -473,21 +473,27 @@
         const res = await fetch(`https://api.jsonbin.io/v3/b/${id}/latest`, {
             headers: { 'X-Master-Key': JSONBIN_API_KEY }
         });
-        if (!res.ok) throw new Error('Read failed: ' + res.status);
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error('Read failed: ' + res.status + ' ' + errText);
+        }
         const data = await res.json();
-        return data.record;
+        return Array.isArray(data.record) ? data.record : (data.record.transactions || []);
     }
 
-    async function jsonbinUpdate(id, record) {
+    async function jsonbinUpdate(id, txns) {
         const res = await fetch(`https://api.jsonbin.io/v3/b/${id}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Master-Key': JSONBIN_API_KEY
             },
-            body: JSON.stringify(record)
+            body: JSON.stringify({ initialized: true, transactions: txns })
         });
-        if (!res.ok) throw new Error('Update failed: ' + res.status);
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error('Update failed: ' + res.status + ' ' + errText);
+        }
     }
 
     // ==== DATA LOAD / SAVE ====
@@ -532,6 +538,10 @@
             console.error('Load error:', error);
             transactions = [];
             setSyncStatus('⚠ መጫን አልተቻለም');
+            banner.style.display = 'block';
+            banner.style.background = '#ffe0e0';
+            banner.style.borderColor = '#e71d36';
+            banner.innerHTML = '⚠ ስህተት: ' + escapeHtml(String(error.message || error));
         }
         render();
     }
