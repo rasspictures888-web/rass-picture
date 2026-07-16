@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RAS Pictures - Dashboard</title>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             --primary-color: #1a1a1a;
@@ -254,6 +253,63 @@
             color: #999;
             margin-top: 10px;
         }
+
+        /* Login screen */
+        #login-screen {
+            max-width: 340px;
+            margin: 80px auto 0 auto;
+            background: var(--card-bg);
+            padding: 30px 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        #login-screen h2 { margin-top: 0; color: var(--primary-color); }
+        #login-screen input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            margin: 15px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            text-align: center;
+        }
+        #login-screen button {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary-color);
+            color: var(--accent-color);
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        #login-error { color: var(--danger-color); font-size: 13px; min-height: 18px; margin: 0; }
+        #logout-bar {
+            text-align: right;
+            margin-bottom: 10px;
+        }
+        #logout-bar button {
+            background: #eee;
+            color: #333;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        #setup-banner {
+            display: none;
+            background: #fff8e1;
+            border: 1px solid #cca43b;
+            border-radius: 10px;
+            padding: 14px;
+            font-size: 12px;
+            margin-bottom: 15px;
+            word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -264,18 +320,19 @@
         <p style="margin: 0; font-size: 12px; color: #aaa;">የዕለት የሂሳብ መቆጣጠሪያ</p>
     </header>
 
-    <div class="auth-bar">
-        <div id="signed-out-view">
-            <p>ውሂብዎን በGoogle Drive ላይ ለማስቀመጥ እና በሁሉም መሳሪያዎችዎ ላይ ለማግኘት ይግቡ</p>
-            <button class="btn-google" id="signin-btn">Google Sign-In</button>
-        </div>
-        <div id="signed-in-view" style="display:none;">
-            <span class="signed-in-badge">✓ ተገናኝቷል: <span id="user-email"></span></span>
-            <button class="btn-signout" id="signout-btn">ውጣ</button>
-        </div>
+    <div id="login-screen">
+        <h2>🔒 መግቢያ</h2>
+        <p style="font-size:13px;color:#888;">የይለፍ ቃል ያስገቡ</p>
+        <input type="password" id="password-input" placeholder="የይለፍ ቃል" autocomplete="off">
+        <p id="login-error"></p>
+        <button id="login-btn">ግባ</button>
     </div>
 
     <div id="app-content">
+        <div id="logout-bar" style="display:none;">
+            <button id="logout-btn">ውጣ</button>
+        </div>
+        <div id="setup-banner"></div>
         <div class="dashboard-grid">
             <div class="card">
                 <h3>የካሽ ገቢ (Cash)</h3>
@@ -345,164 +402,144 @@
 
 <script>
     // ==== CONFIG ====
-    const GOOGLE_CLIENT_ID = '123219683130-0tt5p7eku9uj8cggti7tm9ebe4276rip.apps.googleusercontent.com';
-    const DRIVE_FILENAME = 'ras_pictures_transactions.json';
-    const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+    // 1) Set your own password here (anyone who knows this can log in):
+    const PASSWORD = 'ras2024';
+
+    // 2) Cloud storage (JSONBin.io - free, no Google account needed).
+    //    Get a free "X-Master-Key" at https://jsonbin.io (sign up, then Dashboard > API Keys)
+    //    Paste it below. Leave JSONBIN_BIN_ID empty the very first time you run the app -
+    //    it will create the shared storage automatically and show you an ID to paste back in here.
+    const JSONBIN_API_KEY = '$2a$10$lMLUzAaMUjaYhSHfVXPrPuv3SGLpp6/0sEiTD1F95vWXLWAKbMHee';   // <-- paste your X-Master-Key here
+    let   JSONBIN_BIN_ID  = '';   // <-- after first run, paste the generated Bin ID here
 
     let transactions = [];
-    let accessToken = null;
-    let driveFileId = null;
-    let tokenClient = null;
 
-    // ==== AUTH ====
+    // ==== LOGIN ====
     window.addEventListener('load', () => {
-        tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: GOOGLE_CLIENT_ID,
-            scope: DRIVE_SCOPE,
-            callback: async (response) => {
-                if (response.error) {
-                    console.error('Auth error:', response);
-                    setSyncStatus('⚠ መግባት አልተቻለም');
-                    return;
-                }
-                accessToken = response.access_token;
-                await onSignedIn();
-            }
+        if (localStorage.getItem('ras_logged_in') === 'true') {
+            enterApp();
+        }
+        document.getElementById('login-btn').addEventListener('click', tryLogin);
+        document.getElementById('password-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') tryLogin();
         });
-
-        document.getElementById('signin-btn').addEventListener('click', () => {
-            tokenClient.requestAccessToken();
-        });
-
-        document.getElementById('signout-btn').addEventListener('click', signOut);
+        document.getElementById('logout-btn').addEventListener('click', logout);
     });
 
-    async function onSignedIn() {
-        document.getElementById('signed-out-view').style.display = 'none';
-        document.getElementById('signed-in-view').style.display = 'block';
-        document.getElementById('app-content').style.display = 'block';
-
-        try {
-            const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-                headers: { Authorization: 'Bearer ' + accessToken }
-            });
-            const userInfo = await userInfoRes.json();
-            document.getElementById('user-email').innerText = userInfo.email || '';
-        } catch (e) {
-            console.error('Could not fetch user info', e);
+    function tryLogin() {
+        const val = document.getElementById('password-input').value;
+        if (val === PASSWORD) {
+            localStorage.setItem('ras_logged_in', 'true');
+            enterApp();
+        } else {
+            document.getElementById('login-error').innerText = 'የተሳሳተ የይለፍ ቃል';
         }
+    }
 
+    function logout() {
+        localStorage.removeItem('ras_logged_in');
+        document.getElementById('login-screen').style.display = 'block';
+        document.getElementById('app-content').style.display = 'none';
+        document.getElementById('password-input').value = '';
+    }
+
+    async function enterApp() {
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('app-content').style.display = 'block';
+        document.getElementById('logout-bar').style.display = 'block';
         await loadData();
     }
 
-    function signOut() {
-        if (accessToken) {
-            google.accounts.oauth2.revoke(accessToken, () => {});
-        }
-        accessToken = null;
-        driveFileId = null;
-        transactions = [];
-        document.getElementById('signed-out-view').style.display = 'block';
-        document.getElementById('signed-in-view').style.display = 'none';
-        document.getElementById('app-content').style.display = 'none';
-    }
-
-    // ==== DRIVE FILE HELPERS ====
-    async function findDriveFile() {
-        const q = encodeURIComponent(`name='${DRIVE_FILENAME}' and trashed=false`);
-        const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,modifiedTime)`, {
-            headers: { Authorization: 'Bearer ' + accessToken }
-        });
-        if (!res.ok) throw new Error('Drive search failed: ' + res.status);
-        const data = await res.json();
-        if (data.files && data.files.length > 0) {
-            data.files.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
-            return data.files[0].id;
-        }
-        return null;
-    }
-
-    async function createDriveFile(content) {
-        const metadata = { name: DRIVE_FILENAME, mimeType: 'application/json' };
-        const boundary = '-------314159265358979323846';
-        const delimiter = "\r\n--" + boundary + "\r\n";
-        const closeDelim = "\r\n--" + boundary + "--";
-
-        const body =
-            delimiter +
-            'Content-Type: application/json\r\n\r\n' +
-            JSON.stringify(metadata) +
-            delimiter +
-            'Content-Type: application/json\r\n\r\n' +
-            content +
-            closeDelim;
-
-        const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+    // ==== JSONBIN HELPERS ====
+    async function jsonbinCreate() {
+        const res = await fetch('https://api.jsonbin.io/v3/b', {
             method: 'POST',
             headers: {
-                Authorization: 'Bearer ' + accessToken,
-                'Content-Type': 'multipart/related; boundary="' + boundary + '"'
+                'Content-Type': 'application/json',
+                'X-Master-Key': JSONBIN_API_KEY,
+                'X-Bin-Name': 'ras_pictures_transactions'
             },
-            body: body
+            body: JSON.stringify([])
         });
-        if (!res.ok) throw new Error('Drive create failed: ' + res.status);
+        if (!res.ok) throw new Error('Create failed: ' + res.status);
         const data = await res.json();
-        return data.id;
+        return data.metadata.id;
     }
 
-    async function updateDriveFile(fileId, content) {
-        const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-            method: 'PATCH',
+    async function jsonbinRead(id) {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${id}/latest`, {
+            headers: { 'X-Master-Key': JSONBIN_API_KEY }
+        });
+        if (!res.ok) throw new Error('Read failed: ' + res.status);
+        const data = await res.json();
+        return data.record;
+    }
+
+    async function jsonbinUpdate(id, record) {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${id}`, {
+            method: 'PUT',
             headers: {
-                Authorization: 'Bearer ' + accessToken,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Master-Key': JSONBIN_API_KEY
             },
-            body: content
+            body: JSON.stringify(record)
         });
-        if (!res.ok) throw new Error('Drive update failed: ' + res.status);
-    }
-
-    async function downloadDriveFile(fileId) {
-        const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-            headers: { Authorization: 'Bearer ' + accessToken }
-        });
-        if (!res.ok) throw new Error('Drive download failed: ' + res.status);
-        return await res.text();
+        if (!res.ok) throw new Error('Update failed: ' + res.status);
     }
 
     // ==== DATA LOAD / SAVE ====
     async function loadData() {
-        setSyncStatus('ከGoogle Drive በመጫን ላይ...');
-        try {
-            driveFileId = await findDriveFile();
-            if (driveFileId) {
-                const content = await downloadDriveFile(driveFileId);
-                transactions = content ? JSON.parse(content) : [];
-            } else {
+        const banner = document.getElementById('setup-banner');
+
+        if (!JSONBIN_API_KEY) {
+            banner.style.display = 'block';
+            banner.innerHTML = '⚠ ማከማቻ ገና አልተዋቀረም። ነጻ የ API ቁልፍ ከ <a href="https://jsonbin.io" target="_blank">jsonbin.io</a> ውሰድ እና በኮዱ ውስጥ JSONBIN_API_KEY ላይ ለጥፍ።';
+            transactions = [];
+            render();
+            return;
+        }
+
+        if (!JSONBIN_BIN_ID) {
+            setSyncStatus('የመጀመሪያ ጊዜ ማዋቀር በመካሄድ ላይ...');
+            try {
+                JSONBIN_BIN_ID = await jsonbinCreate();
+                banner.style.display = 'block';
+                banner.innerHTML = '✅ ማከማቻ ተፈጥሯል! ይህን ID ኮፒ አድርገህ በኮዱ ውስጥ JSONBIN_BIN_ID ላይ ለጥፍ ከዚያም እንደገና ወደ GitHub ስቀል፦<br><b>' + JSONBIN_BIN_ID + '</b>';
                 transactions = [];
-                driveFileId = await createDriveFile('[]');
+                setSyncStatus('✓ ተዘጋጅቷል (ID ን አስቀምጥ)');
+            } catch (error) {
+                console.error('Setup error:', error);
+                setSyncStatus('⚠ ማዋቀር አልተቻለም');
+                transactions = [];
             }
-            setSyncStatus('✓ ከGoogle Drive ጋር ተመሳስሏል');
+            render();
+            return;
+        }
+
+        setSyncStatus('በመጫን ላይ...');
+        try {
+            transactions = await jsonbinRead(JSONBIN_BIN_ID);
+            if (!Array.isArray(transactions)) transactions = [];
+            setSyncStatus('✓ ተመሳስሏል');
         } catch (error) {
             console.error('Load error:', error);
             transactions = [];
-            setSyncStatus('⚠ ከGoogle Drive መጫን አልተቻለም');
+            setSyncStatus('⚠ መጫን አልተቻለም');
         }
         render();
     }
 
     async function saveAndRender() {
         submitBtn.disabled = true;
-        submitBtn.innerText = 'ወደ Google Drive በመላክ ላይ...';
+        submitBtn.innerText = 'በመላክ ላይ...';
         setSyncStatus('በማስቀመጥ ላይ...');
         try {
-            const content = JSON.stringify(transactions);
-            if (!driveFileId) {
-                driveFileId = await createDriveFile(content);
+            if (JSONBIN_API_KEY && JSONBIN_BIN_ID) {
+                await jsonbinUpdate(JSONBIN_BIN_ID, transactions);
+                setSyncStatus('✓ ተቀምጧል');
             } else {
-                await updateDriveFile(driveFileId, content);
+                setSyncStatus('⚠ ማከማቻ አልተዋቀረም - ውሂብ አልተቀመጠም');
             }
-            setSyncStatus('✓ ወደ Google Drive ተቀምጧል');
         } catch (error) {
             console.error('Save error:', error);
             setSyncStatus('⚠ ማስቀመጥ አልተቻለም');
@@ -537,7 +574,6 @@
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (!accessToken) return;
 
         const transaction = {
             id: Date.now(),
