@@ -461,7 +461,10 @@
             },
             body: JSON.stringify([])
         });
-        if (!res.ok) throw new Error('Create failed: ' + res.status);
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error('Create failed: ' + res.status + ' ' + errText);
+        }
         const data = await res.json();
         return data.metadata.id;
     }
@@ -510,6 +513,10 @@
             } catch (error) {
                 console.error('Setup error:', error);
                 setSyncStatus('⚠ ማዋቀር አልተቻለም');
+                banner.style.display = 'block';
+                banner.style.background = '#ffe0e0';
+                banner.style.borderColor = '#e71d36';
+                banner.innerHTML = '⚠ ስህተት: ' + escapeHtml(String(error.message || error)) + '<br><span style="font-size:11px;">ይህን ፎቶ አንሳ ላክልኝ</span>';
                 transactions = [];
             }
             render();
