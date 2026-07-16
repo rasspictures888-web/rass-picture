@@ -410,7 +410,7 @@
     //    Paste it below. Leave JSONBIN_BIN_ID empty the very first time you run the app -
     //    it will create the shared storage automatically and show you an ID to paste back in here.
     const JSONBIN_API_KEY = '$2a$10$lMLUzAaMUjaYhSHfVXPrPuv3SGLpp6/0sEiTD1F95vWXLWAKbMHee';   // <-- paste your X-Master-Key here
-    let   JSONBIN_BIN_ID  = '';   // <-- after first run, paste the generated Bin ID here
+    let   JSONBIN_BIN_ID  = '6a58c081da38895dfe659499';   // <-- after first run, paste the generated Bin ID here
 
     let transactions = [];
 
